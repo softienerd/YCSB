@@ -115,9 +115,11 @@ classpath_additional = []
 #    classpath_additional = [os.getcwd() + "/hbase/hbase-0.98.3-hadoop2/lib/commons-lang-2.6.jar"]
 if database == "cassandra-cql":
     classpath_additional = [os.getcwd() + "/guava-18.0.jar"]
-    
+
+
 ycsb_command = ["java", "-cp", os.pathsep.join(classpath_additional + find_jars(ycsb_home, database)), \
                 COMMANDS[sys.argv[1]]["main"], "-db", db_classname] + options
+
 if command:
     ycsb_command.append(command)
 print " ".join(ycsb_command)

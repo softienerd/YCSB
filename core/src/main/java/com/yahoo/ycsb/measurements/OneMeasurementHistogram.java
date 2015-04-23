@@ -36,7 +36,8 @@ import com.yahoo.ycsb.measurements.exporter.MeasurementsExporter;
  */
 public class OneMeasurementHistogram extends OneMeasurement {
     public static final String BUCKETS = "histogram.buckets";
-    public static final String BUCKETS_DEFAULT = "1000";
+    // 1 million microseconds, or 1 second is the max we care about
+    public static final String BUCKETS_DEFAULT = "1000000";
 
     private final AtomicInteger buckets;
     private final AtomicIntegerArray histogram;
@@ -84,10 +85,10 @@ public class OneMeasurementHistogram extends OneMeasurement {
       * @see com.yahoo.ycsb.OneMeasurement#measure(int)
       */
     public void measure(int latency) {
-        if (latency / 1000 >= buckets.get()) {
+        if (latency >= buckets.get()) {
             histogramoverflow.incrementAndGet();
         } else {
-            histogram.incrementAndGet(latency / 1000);
+            histogram.incrementAndGet(latency);
         }
         operations.incrementAndGet();
         totallatency.addAndGet(latency);
@@ -131,15 +132,15 @@ public class OneMeasurementHistogram extends OneMeasurement {
         exporter.write(getName(), "MaxLatency(us)", max.get());
 
         int opcounter = 0;
-        boolean done95th = false;
+        boolean done99th = false;
         for (int i = 0; i < buckets.get(); i++) {
             opcounter += histogram.get(i);
-            if ((!done95th) && (((double) opcounter) / ((double) operations.get()) >= 0.95)) {
-                exporter.write(getName(), "95thPercentileLatency(ms)", i);
-                done95th = true;
+            if ((!done99th) && (((double) opcounter) / ((double) operations.get()) >= 0.99)) {
+                exporter.write(getName(), "99thPercentileLatency(us)", i);
+                done99th = true;
             }
-            if (((double) opcounter) / ((double) operations.get()) >= 0.99) {
-                exporter.write(getName(), "99thPercentileLatency(ms)", i);
+            if (((double) opcounter) / ((double) operations.get()) >= 0.999) {
+                exporter.write(getName(), "99.9thPercentileLatency(us)", i);
                 break;
             }
         }
@@ -151,10 +152,16 @@ public class OneMeasurementHistogram extends OneMeasurement {
 
     @Override
     public void exportMeasurementsFinal(MeasurementsExporter exporter) throws IOException {
-        for (int i = 0; i < buckets.get(); i++) {
-            int count = histogram.get(i);
+        for (int i = 0; i < buckets.get(); i+=100) {
+            int count = 0;
+            // slight inefficiency here since every iteration checks for bucket instead of
+            // doing the check in the outer loop and have another loop that finishes the
+            // remaining piece
+            int j;
+            for (j = i; j < i + 100 && j < buckets.get(); j++)
+                count += histogram.get(i);
             if (count > 0)
-                exporter.write(getName(), Integer.toString(i), count);
+                exporter.write(getName(), "Operations in " + Integer.toString(i) + " - " + Integer.toString(j-1) + " us bucket", count);
         }
         if (histogramoverflow.get() > 0)
             exporter.write(getName(), ">" + buckets.get(), histogramoverflow.get());
